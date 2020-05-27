@@ -8,12 +8,14 @@ import net.corda.testing.node.StartedMockNode
 import kotlin.test.assertEquals
 
 fun createFrom(
-        issuer: StartedMockNode,
-        holder: StartedMockNode,
-        quantity: Long) = TokenStateK(
-        issuer.info.singleIdentity(),
-        holder.info.singleIdentity(),
-        quantity)
+    issuer: StartedMockNode,
+    holder: StartedMockNode,
+    quantity: Long
+) = TokenStateK(
+    issuer.info.singleIdentity(),
+    holder.info.singleIdentity(),
+    quantity
+)
 
 fun TokenStateK.toPair() = Pair(holder, quantity)
 
@@ -30,9 +32,9 @@ class NodeHolding(val holder: StartedMockNode, val quantity: Long) {
 }
 
 fun StartedMockNode.issueTokens(network: MockNetwork, nodeHoldings: Collection<NodeHolding>) =
-        IssueFlowsK.Initiator(nodeHoldings.map(NodeHolding::toPair))
-                .let { startFlow(it) }
-                .also { network.runNetwork() }
-                .getOrThrow()
-                .toLedgerTransaction(services)
-                .outRefsOfType<TokenStateK>()
+    IssueFlowsK.Initiator(nodeHoldings.map(NodeHolding::toPair))
+        .let { startFlow(it) }
+        .also { network.runNetwork() }
+        .getOrThrow()
+        .toLedgerTransaction(services)
+        .outRefsOfType<TokenStateK>()

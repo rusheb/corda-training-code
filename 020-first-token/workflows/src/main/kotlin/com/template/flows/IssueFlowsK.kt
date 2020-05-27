@@ -41,15 +41,16 @@ object IssueFlowsK {
             object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction based on parameters.")
             object VERIFYING_TRANSACTION : ProgressTracker.Step("Verifying contract constraints.")
             object SIGNING_TRANSACTION : ProgressTracker.Step("Signing transaction with our private key.")
-            object FINALISING_TRANSACTION : ProgressTracker.Step("Obtaining notary signature and recording transaction.") {
+            object FINALISING_TRANSACTION :
+                ProgressTracker.Step("Obtaining notary signature and recording transaction.") {
                 override fun childProgressTracker() = FinalityFlow.tracker()
             }
 
             fun tracker() = ProgressTracker(
-                    GENERATING_TRANSACTION,
-                    VERIFYING_TRANSACTION,
-                    SIGNING_TRANSACTION,
-                    FINALISING_TRANSACTION
+                GENERATING_TRANSACTION,
+                VERIFYING_TRANSACTION,
+                SIGNING_TRANSACTION,
+                FINALISING_TRANSACTION
             )
         }
 
@@ -70,7 +71,7 @@ object IssueFlowsK {
             // The issuer is a required signer, so we express this here
             val txCommand = Command(Issue(), issuer.owningKey)
             val txBuilder = TransactionBuilder(notary)
-                    .addCommand(txCommand)
+                .addCommand(txCommand)
             outputTokens.forEach { txBuilder.addOutputState(it, TokenContractK.TOKEN_CONTRACT_ID) }
 
             progressTracker.currentStep = VERIFYING_TRANSACTION
@@ -83,24 +84,27 @@ object IssueFlowsK {
 
             progressTracker.currentStep = FINALISING_TRANSACTION
             val holderFlows = outputTokens
-                    .map { it.holder }
-                    // Remove duplicates as it would be an issue when initiating flows, at least.
-                    .distinct()
-                    // Remove myself.
-                    // I already know what I am doing so no need to inform myself with a separate flow.
-                    .minus(issuer)
-                    .map { initiateFlow(it) }
+                .map { it.holder }
+                // Remove duplicates as it would be an issue when initiating flows, at least.
+                .distinct()
+                // Remove myself.
+                // I already know what I am doing so no need to inform myself with a separate flow.
+                .minus(issuer)
+                .map { initiateFlow(it) }
 
-            return subFlow(FinalityFlow(
+            return subFlow(
+                FinalityFlow(
                     fullySignedTx,
                     holderFlows,
-                    FINALISING_TRANSACTION.childProgressTracker()))
-                    .also { notarised ->
-                        // We want our issuer to have a trace of the amounts that have been issued, whether it is a holder or not,
-                        // in order to know the total supply. Since the issuer is not in the participants, it needs to be done
-                        // manually.
-                        serviceHub.recordTransactions(StatesToRecord.ALL_VISIBLE, listOf(notarised))
-                    }
+                    FINALISING_TRANSACTION.childProgressTracker()
+                )
+            )
+                .also { notarised ->
+                    // We want our issuer to have a trace of the amounts that have been issued, whether it is a holder or not,
+                    // in order to know the total supply. Since the issuer is not in the participants, it needs to be done
+                    // manually.
+                    serviceHub.recordTransactions(StatesToRecord.ALL_VISIBLE, listOf(notarised))
+                }
         }
     }
 
