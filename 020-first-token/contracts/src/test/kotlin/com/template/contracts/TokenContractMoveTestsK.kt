@@ -1,10 +1,15 @@
 package com.template.contracts
 
+import com.r3.corda.lib.tokens.contracts.FungibleTokenContract
+import com.r3.corda.lib.tokens.contracts.commands.MoveTokenCommand
+import com.r3.corda.lib.tokens.contracts.states.FungibleToken
+import com.r3.corda.lib.tokens.contracts.types.IssuedTokenType
+import com.r3.corda.lib.tokens.contracts.types.TokenType
+import com.r3.corda.lib.tokens.contracts.utilities.of
 import com.template.contracts.TokenContractK.Companion.TOKEN_CONTRACT_ID
 import com.template.states.TokenStateK
 import net.corda.core.contracts.TransactionVerificationException
 import net.corda.core.identity.CordaX500Name
-import net.corda.testing.contracts.DummyContract
 import net.corda.testing.core.TestIdentity
 import net.corda.testing.node.MockServices
 import net.corda.testing.node.transaction
@@ -16,15 +21,20 @@ class TokenContractMoveTestsK {
     private val alice = TestIdentity(CordaX500Name("Alice", "London", "GB")).party
     private val bob = TestIdentity(CordaX500Name("Bob", "New York", "US")).party
     private val carly = TestIdentity(CordaX500Name("Carly", "New York", "US")).party
+    private val aliceAirMile = IssuedTokenType(alice, TokenType("AirMile", 0))
+    private val carlyAirMile = IssuedTokenType(carly, TokenType("AirMile", 0))
 
     @Test
-    fun `Transaction must include a TokenContract command`() {
+    fun `Move transaction must be signed by current owner`() {
         ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 10L))
-            command(alice.owningKey, DummyContract.Commands.Create())
-            `fails with`("Required com.template.contracts.TokenContractK.Commands command")
-            command(bob.owningKey, TokenContractK.Commands.Move())
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            input(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, bob))
+            output(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, carly))
+            tweak {
+                command(alice.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0), outputs = listOf(0)))
+                `fails with`("Required signers does not contain all the current owners")
+            }
+            command(bob.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0), outputs = listOf(0)))
             verifies()
         }
     }
@@ -32,9 +42,10 @@ class TokenContractMoveTestsK {
     @Test
     fun `Move transaction must have inputs`() {
         ledgerServices.transaction {
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 10L))
-            command(alice.owningKey, TokenContractK.Commands.Move())
-            `fails with`("There should be tokens to move, in inputs.")
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            output(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, carly))
+            command(alice.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0), outputs = listOf(0)))
+            `fails with`("There is a token group with no assigned command")
         }
     }
 
@@ -50,149 +61,70 @@ class TokenContractMoveTestsK {
     @Test
     // Testing this may be redundant as these wrong states would have to be issued first, but the contract would not
     // let that happen.
-    fun `Inputs must not have a zero quantity`() {
+    fun `Inputs may have a zero quantity`() {
         ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 0L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("All quantities must be above 0.")
-        }
-    }
-
-    @Test
-    // Testing this may be redundant as these wrong states would have to be issued first, but the contract would not
-    // let that happen.
-    fun `Inputs must not have negative quantity`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, -1L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 9L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("All quantities must be above 0.")
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            input(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, bob))
+            input(FungibleTokenContract.contractId, FungibleToken(0 of aliceAirMile, bob))
+            output(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, carly))
+            command(bob.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0, 1), outputs = listOf(0)))
+            verifies()
         }
     }
 
     @Test
     fun `Outputs must not have a zero quantity`() {
         ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 0L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("All quantities must be above 0.")
-        }
-    }
-
-    @Test
-    fun `Outputs must not have negative quantity`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 11L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, -1L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("All quantities must be above 0.")
-        }
-    }
-
-    @Test
-    fun `Issuer must be conserved in Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 10L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The list of issuers should be conserved.")
-        }
-    }
-
-    @Test
-    fun `All issuers must be conserved in Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 20L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The list of issuers should be conserved.")
-        }
-    }
-
-    @Test
-    fun `Sum must be conserved in Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 15L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 20L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The sum of quantities for each issuer should be conserved.")
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            input(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, bob))
+            input(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, bob))
+            output(FungibleTokenContract.contractId, FungibleToken(0 of aliceAirMile, carly))
+            tweak {
+                command(bob.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0, 1), outputs = listOf(0)))
+                `fails with`("In move groups there must be an amount of output tokens > ZERO")
+            }
+            output(FungibleTokenContract.contractId, FungibleToken(20 of aliceAirMile, carly))
+            command(bob.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0, 1), outputs = listOf(0, 1)))
+            `fails with`("You cannot create output token amounts with a ZERO amount")
         }
     }
 
     @Test
     fun `All sums per issuer must be conserved in Move transaction`() {
         ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 15L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 20L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 15L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 30L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The sum of quantities for each issuer should be conserved.")
-        }
-    }
-
-    @Test
-    fun `Sums that result in overflow are not possible in Move transaction`() {
-        try {
-            ledgerServices.transaction {
-                input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, Long.MAX_VALUE))
-                input(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 1L))
-                output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 1L))
-                output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, Long.MAX_VALUE))
-                command(listOf(bob.owningKey, carly.owningKey), TokenContractK.Commands.Move())
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            input(FungibleTokenContract.contractId, FungibleToken(10 of aliceAirMile, bob))
+            input(FungibleTokenContract.contractId, FungibleToken(15 of aliceAirMile, bob))
+            output(FungibleTokenContract.contractId, FungibleToken(25 of aliceAirMile, bob))
+            command(bob.owningKey, MoveTokenCommand(aliceAirMile, inputs = listOf(0, 1), outputs = listOf(0)))
+            tweak {
+                input(FungibleTokenContract.contractId, FungibleToken(10 of carlyAirMile, bob))
+                input(FungibleTokenContract.contractId, FungibleToken(15 of carlyAirMile, bob))
+                command(bob.owningKey, MoveTokenCommand(carlyAirMile, inputs = listOf(2, 3), outputs = listOf(1)))
+                tweak {
+                    output(FungibleTokenContract.contractId, FungibleToken(30 of carlyAirMile, bob))
+                    `fails with`("In move groups the amount of input tokens MUST EQUAL the amount of output tokens")
+                }
+                output(FungibleTokenContract.contractId, FungibleToken(25 of carlyAirMile, bob))
                 verifies()
             }
-            throw NotImplementedError("Should not reach here")
-        } catch (e: TransactionVerificationException.ContractRejection) {
-            assertEquals(ArithmeticException::class, e.cause!!::class)
-        }
-    }
-
-    @Test
-    fun `Current holder must sign Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 10L))
-            command(alice.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The current holders should sign.")
-        }
-    }
-
-    @Test
-    fun `All current holders must sign Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 20L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 30L))
-            command(bob.owningKey, TokenContractK.Commands.Move())
-            `fails with`("The current holders should sign.")
-        }
-    }
-
-    @Test
-    fun `Can have different issuers in Move transaction`() {
-        ledgerServices.transaction {
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 10L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 20L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, alice, 5L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, bob, 5L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(alice, carly, 20L))
-            input(TOKEN_CONTRACT_ID, TokenStateK(carly, carly, 40L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(carly, alice, 20L))
-            output(TOKEN_CONTRACT_ID, TokenStateK(carly, bob, 20L))
-            command(listOf(bob.owningKey, carly.owningKey), TokenContractK.Commands.Move())
             verifies()
         }
     }
 
+    @Test
+    fun `Sums cannot result in overflow`() {
+        ledgerServices.transaction {
+            attachment("com.r3.corda.lib.tokens.contracts.FungibleTokenContract")
+            input(FungibleTokenContract.contractId, FungibleToken(Long.MAX_VALUE of aliceAirMile, bob))
+            input(FungibleTokenContract.contractId, FungibleToken(1 of aliceAirMile, carly))
+            output(FungibleTokenContract.contractId, FungibleToken(1 of aliceAirMile, bob))
+            output(FungibleTokenContract.contractId, FungibleToken(Long.MAX_VALUE of aliceAirMile, carly))
+            command(
+                listOf(bob.owningKey, carly.owningKey),
+                MoveTokenCommand(aliceAirMile, inputs = listOf(0, 1), outputs = listOf(0, 1))
+            )
+            `fails with`("Contract verification failed: long overflow")
+        }
+    }
 }
