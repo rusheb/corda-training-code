@@ -19,18 +19,14 @@ class IssueFlowsTestsK {
     private val network = MockNetwork(MockNetworkParameters()
             .withNotarySpecs(ImmutableList.of(MockNetworkNotarySpec(Constants.desiredNotary)))
             .withCordappsForAllNodes(listOf(
+                    TestCordapp.findCordapp("com.r3.corda.lib.tokens.contracts"),
+                    TestCordapp.findCordapp("com.r3.corda.lib.tokens.workflows"),
                     TestCordapp.findCordapp("com.template.contracts"),
                     TestCordapp.findCordapp("com.template.flows"))))
     private val alice = network.createNode()
     private val bob = network.createNode()
     private val carly = network.createNode()
     private val dan = network.createNode()
-
-    init {
-        listOf(alice, bob, carly).forEach {
-            it.registerInitiatedFlow(IssueFlowsK.Responder::class.java)
-        }
-    }
 
     @Before
     fun setup() = network.runNetwork()
@@ -100,7 +96,7 @@ class IssueFlowsTestsK {
     fun `recorded transaction has no inputs and a single output, the token state`() {
         val expected = createFrom(alice, bob, 10L)
 
-        val flow = IssueFlowsK.Initiator(expected.holder, expected.quantity)
+        val flow = IssueFlowsK.Initiator(expected.holder, expected.amount.quantity)
         val future = alice.startFlow(flow)
         network.runNetwork()
         val tx = future.getOrThrow()
@@ -119,7 +115,7 @@ class IssueFlowsTestsK {
     fun `there is 1 correct recorded state`() {
         val expected = createFrom(alice, bob, 10L)
 
-        val flow = IssueFlowsK.Initiator(expected.holder, expected.quantity)
+        val flow = IssueFlowsK.Initiator(expected.holder, expected.amount.quantity)
         val future = alice.startFlow(flow)
         network.runNetwork()
         future.get()

@@ -219,94 +219,94 @@ object RedeemFlowsK {
                         states.minus(state))
     }
 
-    @StartableByRPC
-    /**
-     * Allows to redeem a specific quantity of fungible tokens, as it assists in fetching them in the vault.
-     */
-    class SimpleInitiator(
-            notary: Party,
-            private val issuer: Party,
-            holder: Party,
-            private val totalQuantity: Long,
-            override val progressTracker: ProgressTracker = tracker())
-        : FlowLogic<Pair<SignedTransaction?, SignedTransaction>>() {
-
-        /**
-         * A basic search criteria for the vault.
-         */
-        private val tokenCriteria: QueryCriteria
-
-        init {
-            if (totalQuantity <= 0) throw IllegalArgumentException("totalQuantity must be positive")
-            tokenCriteria = QueryCriteria.VaultQueryCriteria()
-                    .withParticipants(listOf(holder))
-                    .withNotary(listOf(notary))
-        }
-
-        @Suppress("ClassName")
-        companion object {
-            object FETCHING_TOKEN_STATES : ProgressTracker.Step("Fetching token states based on parameters.")
-            object MOVING_TO_EXACT_COUNT : ProgressTracker.Step("Moving token states so as to have an exact sum.")
-            object HANDING_TO_INITIATOR : ProgressTracker.Step("Handing to proper initiator.") {
-                override fun childProgressTracker() = Initiator.tracker()
-            }
-
-            fun tracker() = ProgressTracker(
-                    FETCHING_TOKEN_STATES,
-                    MOVING_TO_EXACT_COUNT,
-                    HANDING_TO_INITIATOR)
-        }
-
-        private fun fetchWorthAtLeast(
-                remainingSum: Long,
-                paging: PageSpecification = PageSpecification(1))
-                : StateAccumulator {
-            // We reached the desired state already.
-            if (remainingSum <= 0) return StateAccumulator(0L)
-            val pagedStates = serviceHub.vaultService
-                    .queryBy(TokenStateK::class.java, tokenCriteria, paging)
-                    .states
-            if (pagedStates.isEmpty()) throw FlowException("Not enough states to reach sum.")
-
-            val fetched = pagedStates
-                    // The previous query cannot pre-filter by issuer so we need to drop some here.
-                    .filter { it.state.data.issuer == issuer }
-                    // We will keep only up to the point where we have have enough.
-                    .fold(StateAccumulator(remainingSum)) { accumulator, state ->
-                        accumulator.plus(state)
-                    }
-            // Let's fetch some more, possibly an empty list.
-            return fetched.plus(fetchWorthAtLeast(
-                    // If this number is 0 or less, we will get an empty list.
-                    remainingSum - fetched.sum,
-                    // Take the next page
-                    paging.copy(pageNumber = paging.pageNumber + 1)
-            ))
-        }
-
-        @Suspendable
-        override fun call(): Pair<SignedTransaction?, SignedTransaction> {
-
-            progressTracker.currentStep = FETCHING_TOKEN_STATES
-            val accumulated = fetchWorthAtLeast(totalQuantity)
-
-            progressTracker.currentStep = MOVING_TO_EXACT_COUNT
-            // If we did not get an exact amount, we need to create some change for ourselves before we redeem the
-            // exact quantity wanted.
-            val moveTx = if (accumulated.sum <= totalQuantity) null
-            else subFlow(MoveFlowsK.Initiator(accumulated.states, listOf(
-                    TokenStateK(issuer, ourIdentity, totalQuantity), // Index 0 in outputs.
-                    TokenStateK(issuer, ourIdentity, accumulated.sum - totalQuantity))))
-
-            val toUse = if (moveTx == null) accumulated.states
-            else listOf(moveTx.tx.outRef(0))
-
-            progressTracker.currentStep = HANDING_TO_INITIATOR
-            return Pair(moveTx, subFlow(Initiator(
-                    toUse,
-                    HANDING_TO_INITIATOR.childProgressTracker())))
-        }
-
-    }
+//    @StartableByRPC
+//    /**
+//     * Allows to redeem a specific quantity of fungible tokens, as it assists in fetching them in the vault.
+//     */
+//    class SimpleInitiator(
+//            notary: Party,
+//            private val issuer: Party,
+//            holder: Party,
+//            private val totalQuantity: Long,
+//            override val progressTracker: ProgressTracker = tracker())
+//        : FlowLogic<Pair<SignedTransaction?, SignedTransaction>>() {
+//
+//        /**
+//         * A basic search criteria for the vault.
+//         */
+//        private val tokenCriteria: QueryCriteria
+//
+//        init {
+//            if (totalQuantity <= 0) throw IllegalArgumentException("totalQuantity must be positive")
+//            tokenCriteria = QueryCriteria.VaultQueryCriteria()
+//                    .withParticipants(listOf(holder))
+//                    .withNotary(listOf(notary))
+//        }
+//
+//        @Suppress("ClassName")
+//        companion object {
+//            object FETCHING_TOKEN_STATES : ProgressTracker.Step("Fetching token states based on parameters.")
+//            object MOVING_TO_EXACT_COUNT : ProgressTracker.Step("Moving token states so as to have an exact sum.")
+//            object HANDING_TO_INITIATOR : ProgressTracker.Step("Handing to proper initiator.") {
+//                override fun childProgressTracker() = Initiator.tracker()
+//            }
+//
+//            fun tracker() = ProgressTracker(
+//                    FETCHING_TOKEN_STATES,
+//                    MOVING_TO_EXACT_COUNT,
+//                    HANDING_TO_INITIATOR)
+//        }
+//
+//        private fun fetchWorthAtLeast(
+//                remainingSum: Long,
+//                paging: PageSpecification = PageSpecification(1))
+//                : StateAccumulator {
+//            // We reached the desired state already.
+//            if (remainingSum <= 0) return StateAccumulator(0L)
+//            val pagedStates = serviceHub.vaultService
+//                    .queryBy(TokenStateK::class.java, tokenCriteria, paging)
+//                    .states
+//            if (pagedStates.isEmpty()) throw FlowException("Not enough states to reach sum.")
+//
+//            val fetched = pagedStates
+//                    // The previous query cannot pre-filter by issuer so we need to drop some here.
+//                    .filter { it.state.data.issuer == issuer }
+//                    // We will keep only up to the point where we have have enough.
+//                    .fold(StateAccumulator(remainingSum)) { accumulator, state ->
+//                        accumulator.plus(state)
+//                    }
+//            // Let's fetch some more, possibly an empty list.
+//            return fetched.plus(fetchWorthAtLeast(
+//                    // If this number is 0 or less, we will get an empty list.
+//                    remainingSum - fetched.sum,
+//                    // Take the next page
+//                    paging.copy(pageNumber = paging.pageNumber + 1)
+//            ))
+//        }
+//
+//        @Suspendable
+//        override fun call(): Pair<SignedTransaction?, SignedTransaction> {
+//
+//            progressTracker.currentStep = FETCHING_TOKEN_STATES
+//            val accumulated = fetchWorthAtLeast(totalQuantity)
+//
+//            progressTracker.currentStep = MOVING_TO_EXACT_COUNT
+//            // If we did not get an exact amount, we need to create some change for ourselves before we redeem the
+//            // exact quantity wanted.
+//            val moveTx = if (accumulated.sum <= totalQuantity) null
+//            else subFlow(MoveFlowsK.Initiator(accumulated.states, listOf(
+//                    TokenStateK(issuer, ourIdentity, totalQuantity), // Index 0 in outputs.
+//                    TokenStateK(issuer, ourIdentity, accumulated.sum - totalQuantity))))
+//
+//            val toUse = if (moveTx == null) accumulated.states
+//            else listOf(moveTx.tx.outRef(0))
+//
+//            progressTracker.currentStep = HANDING_TO_INITIATOR
+//            return Pair(moveTx, subFlow(Initiator(
+//                    toUse,
+//                    HANDING_TO_INITIATOR.childProgressTracker())))
+//        }
+//
+//    }
 
 }
